@@ -462,6 +462,11 @@ func (r *ServiceResource) Read(ctx context.Context, req resource.ReadRequest, re
 	err = getAndBuildServiceInstance(ctx, *r.client, data.ProjectId.ValueString(), data.Id.ValueString(), data)
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Service instance not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read service settings, got error: %s", err))
 		return
 	}
@@ -469,6 +474,11 @@ func (r *ServiceResource) Read(ctx context.Context, req resource.ReadRequest, re
 	err = getAndBuildVolumeInstance(ctx, *r.client, data.ProjectId.ValueString(), data.Id.ValueString(), data)
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Volume instance not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read volume settings, got error: %s", err))
 		return
 	}
@@ -627,9 +637,8 @@ func (r *ServiceResource) Update(ctx context.Context, req resource.UpdateRequest
 
 	if err != nil {
 		if IsNotFoundError(err) {
-			// Service instance was deleted externally, remove from state to trigger recreation
-			tflog.Warn(ctx, "Service instance not found during update, removing from state to trigger recreation", map[string]interface{}{"id": data.Id.ValueString()})
-			resp.State.RemoveResource(ctx)
+			resp.Diagnostics.AddError("Resource Deleted Externally",
+				fmt.Sprintf("Service instance was deleted outside of Terraform. Run 'terraform refresh' or 'terraform plan' to update state, then apply again. Error: %s", err))
 			return
 		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update service repo or image connection, got error: %s", err))

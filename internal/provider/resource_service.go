@@ -459,6 +459,24 @@ func (r *ServiceResource) Read(ctx context.Context, req resource.ReadRequest, re
 	data.Name = types.StringValue(service.Name)
 	data.ProjectId = types.StringValue(service.ProjectId)
 
+	// Check if the service has any service instances - if not, it's a broken/orphaned service
+	instancesResponse, err := getServiceInstances(ctx, *r.client, data.Id.ValueString())
+	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Service instances query failed with not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
+		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to query service instances, got error: %s", err))
+		return
+	}
+
+	if len(instancesResponse.Service.ServiceInstances.Edges) == 0 {
+		tflog.Warn(ctx, "Service has no instances (orphaned service), removing from state to allow recreation", map[string]interface{}{"id": data.Id.ValueString()})
+		resp.State.RemoveResource(ctx)
+		return
+	}
+
 	err = getAndBuildServiceInstance(ctx, *r.client, data.ProjectId.ValueString(), data.Id.ValueString(), data)
 
 	if err != nil {

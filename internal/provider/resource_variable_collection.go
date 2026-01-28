@@ -422,7 +422,7 @@ func getVariableNames(ctx context.Context, data *VariableCollectionResourceModel
 
 func getVariableCollection(ctx context.Context, client graphql.Client, projectId string, environmentId string, serviceId string, names []string, data *VariableCollectionResourceModel) error {
 	if len(names) == 0 {
-		return errors.New("cannot get variable collection with no variable names")
+		return errors.New("variable collection not found: no variable names")
 	}
 
 	response, err := getVariables(ctx, client, projectId, environmentId, serviceId)

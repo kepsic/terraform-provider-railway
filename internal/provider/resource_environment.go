@@ -137,6 +137,11 @@ func (r *EnvironmentResource) Read(ctx context.Context, req resource.ReadRequest
 	response, err := getEnvironment(ctx, *r.client, data.Id.ValueString())
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Environment not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read environment, got error: %s", err))
 		return
 	}

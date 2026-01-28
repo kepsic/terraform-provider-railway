@@ -177,6 +177,31 @@ var graphQLRetryablePatterns = []string{
 	"connection refused",
 }
 
+// Patterns that indicate a resource was not found
+var graphQLNotFoundPatterns = []string{
+	"not found",
+	"does not exist",
+	"could not find",
+	"cannot find",
+	"no longer exists",
+	"was deleted",
+	"has been deleted",
+}
+
+// IsNotFoundError checks if an error indicates a resource was not found
+func IsNotFoundError(err error) bool {
+	if err == nil {
+		return false
+	}
+	errMsg := strings.ToLower(err.Error())
+	for _, pattern := range graphQLNotFoundPatterns {
+		if strings.Contains(errMsg, pattern) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsRetryableGraphQLError checks if an error should trigger a retry
 func IsRetryableGraphQLError(err error) bool {
 	if err == nil {

@@ -181,6 +181,11 @@ func (r *CustomDomainResource) Read(ctx context.Context, req resource.ReadReques
 	response, err := listCustomDomains(ctx, *r.client, data.EnvironmentId.ValueString(), data.ServiceId.ValueString(), data.ProjectId.ValueString())
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Custom domain not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to list custom domains, got error: %s", err))
 		return
 	}
@@ -193,7 +198,8 @@ func (r *CustomDomainResource) Read(ctx context.Context, req resource.ReadReques
 	}
 
 	if domain.Id == "" {
-		resp.Diagnostics.AddError("Client Error", "Unable to find custom domain")
+		tflog.Warn(ctx, "Custom domain not found in list, removing from state", map[string]interface{}{"domain": data.Domain.ValueString()})
+		resp.State.RemoveResource(ctx)
 		return
 	}
 

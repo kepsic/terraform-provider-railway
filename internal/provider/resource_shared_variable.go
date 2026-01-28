@@ -154,6 +154,11 @@ func (r *SharedVariableResource) Read(ctx context.Context, req resource.ReadRequ
 	err := getSharedVariable(ctx, *r.client, data.ProjectId.ValueString(), data.EnvironmentId.ValueString(), data.Name.ValueString(), data)
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Shared variable not found, removing from state", map[string]interface{}{"name": data.Name.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read shared variable, got error: %s", err))
 		return
 	}

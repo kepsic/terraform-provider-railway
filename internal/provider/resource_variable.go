@@ -174,6 +174,11 @@ func (r *VariableResource) Read(ctx context.Context, req resource.ReadRequest, r
 	err := getVariable(ctx, *r.client, data.ProjectId.ValueString(), data.EnvironmentId.ValueString(), data.ServiceId.ValueString(), data.Name.ValueString(), data)
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Variable not found, removing from state", map[string]interface{}{"name": data.Name.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read variable, got error: %s", err))
 		return
 	}

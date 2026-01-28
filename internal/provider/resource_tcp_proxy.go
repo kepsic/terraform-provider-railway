@@ -169,10 +169,16 @@ func (r *TcpProxyResource) Read(ctx context.Context, req resource.ReadRequest, r
 	response, err := getTcpProxy(ctx, *r.client, data.EnvironmentId.ValueString(), data.ServiceId.ValueString())
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "TCP proxy not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read tcp proxy, got error: %s", err))
 		return
 	}
 
+	found := false
 	for _, proxy := range response.TcpProxies {
 		if proxy.Id == data.Id.ValueString() {
 			data.Id = types.StringValue(proxy.Id)
@@ -181,7 +187,15 @@ func (r *TcpProxyResource) Read(ctx context.Context, req resource.ReadRequest, r
 			data.ServiceId = types.StringValue(proxy.ServiceId)
 			data.ProxyPort = types.Int64Value(int64(proxy.ProxyPort))
 			data.Domain = types.StringValue(proxy.Domain)
+			found = true
+			break
 		}
+	}
+
+	if !found {
+		tflog.Warn(ctx, "TCP proxy not found in list, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+		resp.State.RemoveResource(ctx)
+		return
 	}
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, &data)...)

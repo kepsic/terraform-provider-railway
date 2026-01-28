@@ -220,3 +220,61 @@ func TestIsRetryableGraphQLError(t *testing.T) {
 		})
 	}
 }
+
+func TestIsNotFoundError(t *testing.T) {
+	tests := []struct {
+		name     string
+		err      error
+		expected bool
+	}{
+		{
+			name:     "nil error",
+			err:      nil,
+			expected: false,
+		},
+		{
+			name:     "not found error",
+			err:      gqlerror.List{{Message: "Service not found"}},
+			expected: true,
+		},
+		{
+			name:     "does not exist error",
+			err:      gqlerror.List{{Message: "Resource does not exist"}},
+			expected: true,
+		},
+		{
+			name:     "could not find error",
+			err:      gqlerror.List{{Message: "Could not find the requested project"}},
+			expected: true,
+		},
+		{
+			name:     "serviceInstance not found",
+			err:      gqlerror.List{{Message: "serviceConnect ServiceInstance not found"}},
+			expected: true,
+		},
+		{
+			name:     "was deleted error",
+			err:      gqlerror.List{{Message: "The resource was deleted"}},
+			expected: true,
+		},
+		{
+			name:     "generic error",
+			err:      errors.New("some random error"),
+			expected: false,
+		},
+		{
+			name:     "rate limit error (not a not-found)",
+			err:      gqlerror.List{{Message: "Rate limit exceeded"}},
+			expected: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := IsNotFoundError(tt.err)
+			if result != tt.expected {
+				t.Errorf("IsNotFoundError() = %v, expected %v", result, tt.expected)
+			}
+		})
+	}
+}

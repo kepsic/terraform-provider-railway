@@ -244,6 +244,11 @@ func (r *ProjectResource) Read(ctx context.Context, req resource.ReadRequest, re
 	project, enviroment, err := defaultEnvironmentForProject(ctx, *r.client, data.Id.ValueString())
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Project not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read project, got error: %s", err))
 		return
 	}

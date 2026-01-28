@@ -444,6 +444,11 @@ func (r *ServiceResource) Read(ctx context.Context, req resource.ReadRequest, re
 	response, err := getService(ctx, *r.client, data.Id.ValueString())
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Service not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read service, got error: %s", err))
 		return
 	}

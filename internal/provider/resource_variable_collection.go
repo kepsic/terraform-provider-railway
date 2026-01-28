@@ -221,6 +221,11 @@ func (r *VariableCollectionResource) Read(ctx context.Context, req resource.Read
 	err := getVariableCollection(ctx, *r.client, data.ProjectId.ValueString(), data.EnvironmentId.ValueString(), data.ServiceId.ValueString(), variableNames, data)
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			tflog.Warn(ctx, "Variable collection not found, removing from state", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to read variable collection, got error: %s", err))
 		return
 	}

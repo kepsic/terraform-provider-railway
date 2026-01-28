@@ -626,7 +626,14 @@ func (r *ServiceResource) Update(ctx context.Context, req resource.UpdateRequest
 	err = updateServiceConnection(ctx, *r.client, data.Id.ValueString(), data, state)
 
 	if err != nil {
+		if IsNotFoundError(err) {
+			// Service instance was deleted externally, remove from state to trigger recreation
+			tflog.Warn(ctx, "Service instance not found during update, removing from state to trigger recreation", map[string]interface{}{"id": data.Id.ValueString()})
+			resp.State.RemoveResource(ctx)
+			return
+		}
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to update service repo or image connection, got error: %s", err))
+		return
 	}
 
 	err = redeployAllInstances(ctx, *r.client, data.Id.ValueString())

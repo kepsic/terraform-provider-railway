@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-framework-validators/int64validator"
 	"github.com/hashicorp/terraform-plugin-framework-validators/listvalidator"
@@ -347,6 +348,27 @@ func (r *ServiceResource) Create(ctx context.Context, req resource.CreateRequest
 	}
 
 	response, err := createService(ctx, *r.client, input)
+
+	// Handle "already exists" error - check if it's an orphaned service we can clean up
+	if err != nil && strings.Contains(strings.ToLower(err.Error()), "already exists") {
+		tflog.Info(ctx, "Service with this name already exists, checking if it's orphaned", map[string]interface{}{
+			"name":      data.Name.ValueString(),
+			"projectId": data.ProjectId.ValueString(),
+		})
+
+		// Try to find and clean up the orphaned service
+		cleaned, cleanupErr := r.cleanupOrphanedService(ctx, data.Name.ValueString(), data.ProjectId.ValueString())
+		if cleanupErr != nil {
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create service (already exists) and failed to clean up orphaned service: %s. Original error: %s", cleanupErr, err))
+			return
+		}
+
+		if cleaned {
+			// Retry creation after cleanup
+			tflog.Info(ctx, "Orphaned service cleaned up, retrying creation")
+			response, err = createService(ctx, *r.client, input)
+		}
+	}
 
 	if err != nil {
 		resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create service, got error: %s", err))
@@ -972,4 +994,66 @@ func redeployAllInstances(ctx context.Context, client graphql.Client, serviceId 
 	tflog.Trace(ctx, "redeployed all service instances")
 
 	return nil
+}
+
+// cleanupOrphanedService finds a service by name in a project, checks if it's orphaned
+// (has no service instances), and deletes it if so. Returns true if cleanup was performed.
+func (r *ServiceResource) cleanupOrphanedService(ctx context.Context, serviceName string, projectId string) (bool, error) {
+	// Get all services in the project
+	projectServices, err := getProjectServices(ctx, *r.client, projectId)
+	if err != nil {
+		return false, fmt.Errorf("failed to list services in project: %w", err)
+	}
+
+	// Find the service with matching name
+	var existingServiceId string
+	for _, edge := range projectServices.Project.Services.Edges {
+		if edge.Node.Name == serviceName {
+			existingServiceId = edge.Node.Id
+			break
+		}
+	}
+
+	if existingServiceId == "" {
+		// No service with this name found - nothing to clean up
+		return false, nil
+	}
+
+	tflog.Info(ctx, "Found existing service with same name, checking if orphaned", map[string]interface{}{
+		"serviceId":   existingServiceId,
+		"serviceName": serviceName,
+	})
+
+	// Check if this service has any instances
+	instancesResponse, err := getServiceInstances(ctx, *r.client, existingServiceId)
+	if err != nil {
+		return false, fmt.Errorf("failed to get service instances: %w", err)
+	}
+
+	if len(instancesResponse.Service.ServiceInstances.Edges) > 0 {
+		// Service has instances - it's not orphaned, don't delete it
+		tflog.Info(ctx, "Service has instances, not orphaned - cannot clean up", map[string]interface{}{
+			"serviceId":     existingServiceId,
+			"instanceCount": len(instancesResponse.Service.ServiceInstances.Edges),
+		})
+		return false, nil
+	}
+
+	// Service is orphaned - delete it
+	tflog.Warn(ctx, "Service is orphaned (no instances), deleting to allow recreation", map[string]interface{}{
+		"serviceId":   existingServiceId,
+		"serviceName": serviceName,
+	})
+
+	_, err = deleteService(ctx, *r.client, existingServiceId)
+	if err != nil {
+		return false, fmt.Errorf("failed to delete orphaned service: %w", err)
+	}
+
+	tflog.Info(ctx, "Successfully deleted orphaned service", map[string]interface{}{
+		"serviceId":   existingServiceId,
+		"serviceName": serviceName,
+	})
+
+	return true, nil
 }

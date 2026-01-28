@@ -1017,6 +1017,14 @@ type __getProjectInput struct {
 // GetId returns __getProjectInput.Id, and is useful for accessing the field via an interface.
 func (v *__getProjectInput) GetId() string { return v.Id }
 
+// __getProjectServicesInput is used internally by genqlient
+type __getProjectServicesInput struct {
+	ProjectId string `json:"projectId"`
+}
+
+// GetProjectId returns __getProjectServicesInput.ProjectId, and is useful for accessing the field via an interface.
+func (v *__getProjectServicesInput) GetProjectId() string { return v.ProjectId }
+
 // __getServiceInput is used internally by genqlient
 type __getServiceInput struct {
 	Id string `json:"id"`
@@ -2296,6 +2304,61 @@ type getProjectResponse struct {
 
 // GetProject returns getProjectResponse.Project, and is useful for accessing the field via an interface.
 func (v *getProjectResponse) GetProject() getProjectProject { return v.Project }
+
+// getProjectServicesProject includes the requested fields of the GraphQL type Project.
+type getProjectServicesProject struct {
+	Services getProjectServicesProjectServicesProjectServicesConnection `json:"services"`
+}
+
+// GetServices returns getProjectServicesProject.Services, and is useful for accessing the field via an interface.
+func (v *getProjectServicesProject) GetServices() getProjectServicesProjectServicesProjectServicesConnection {
+	return v.Services
+}
+
+// getProjectServicesProjectServicesProjectServicesConnection includes the requested fields of the GraphQL type ProjectServicesConnection.
+type getProjectServicesProjectServicesProjectServicesConnection struct {
+	Edges []getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdge `json:"edges"`
+}
+
+// GetEdges returns getProjectServicesProjectServicesProjectServicesConnection.Edges, and is useful for accessing the field via an interface.
+func (v *getProjectServicesProjectServicesProjectServicesConnection) GetEdges() []getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdge {
+	return v.Edges
+}
+
+// getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdge includes the requested fields of the GraphQL type ProjectServicesConnectionEdge.
+type getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdge struct {
+	Node getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService `json:"node"`
+}
+
+// GetNode returns getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdge.Node, and is useful for accessing the field via an interface.
+func (v *getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdge) GetNode() getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService {
+	return v.Node
+}
+
+// getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService includes the requested fields of the GraphQL type Service.
+type getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// GetId returns getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService.Id, and is useful for accessing the field via an interface.
+func (v *getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService) GetId() string {
+	return v.Id
+}
+
+// GetName returns getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService.Name, and is useful for accessing the field via an interface.
+func (v *getProjectServicesProjectServicesProjectServicesConnectionEdgesProjectServicesConnectionEdgeNodeService) GetName() string {
+	return v.Name
+}
+
+// getProjectServicesResponse is returned by getProjectServices on success.
+type getProjectServicesResponse struct {
+	// Get a project by ID
+	Project getProjectServicesProject `json:"project"`
+}
+
+// GetProject returns getProjectServicesResponse.Project, and is useful for accessing the field via an interface.
+func (v *getProjectServicesResponse) GetProject() getProjectServicesProject { return v.Project }
 
 // getServiceInstanceResponse is returned by getServiceInstance on success.
 type getServiceInstanceResponse struct {
@@ -4005,6 +4068,45 @@ fragment Project on Project {
 	var err error
 
 	var data getProjectResponse
+	resp := &graphql.Response{Data: &data}
+
+	err = client.MakeRequest(
+		ctx,
+		req,
+		resp,
+	)
+
+	return &data, err
+}
+
+func getProjectServices(
+	ctx context.Context,
+	client graphql.Client,
+	projectId string,
+) (*getProjectServicesResponse, error) {
+	req := &graphql.Request{
+		OpName: "getProjectServices",
+		Query: `
+query getProjectServices ($projectId: String!) {
+	project(id: $projectId) {
+		services {
+			edges {
+				node {
+					id
+					name
+				}
+			}
+		}
+	}
+}
+`,
+		Variables: &__getProjectServicesInput{
+			ProjectId: projectId,
+		},
+	}
+	var err error
+
+	var data getProjectServicesResponse
 	resp := &graphql.Response{Data: &data}
 
 	err = client.MakeRequest(

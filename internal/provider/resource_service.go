@@ -351,15 +351,15 @@ func (r *ServiceResource) Create(ctx context.Context, req resource.CreateRequest
 
 	// Handle "already exists" error - check if it's an orphaned service we can clean up
 	if err != nil && strings.Contains(strings.ToLower(err.Error()), "already exists") {
-		tflog.Info(ctx, "Service with this name already exists, checking if it's orphaned", map[string]interface{}{
+		tflog.Info(ctx, "Service with this name already exists, attempting to handle", map[string]interface{}{
 			"name":      data.Name.ValueString(),
 			"projectId": data.ProjectId.ValueString(),
 		})
 
-		// Try to find and clean up the orphaned service
-		cleaned, cleanupErr := r.cleanupOrphanedService(ctx, data.Name.ValueString(), data.ProjectId.ValueString())
+		// Try to find and clean up the orphaned service, or adopt it if it has instances
+		existingServiceId, cleaned, cleanupErr := r.handleExistingService(ctx, data.Name.ValueString(), data.ProjectId.ValueString())
 		if cleanupErr != nil {
-			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create service (already exists) and failed to clean up orphaned service: %s. Original error: %s", cleanupErr, err))
+			resp.Diagnostics.AddError("Client Error", fmt.Sprintf("Unable to create service (already exists) and failed to handle existing service: %s. Original error: %s", cleanupErr, err))
 			return
 		}
 
@@ -367,6 +367,15 @@ func (r *ServiceResource) Create(ctx context.Context, req resource.CreateRequest
 			// Retry creation after cleanup
 			tflog.Info(ctx, "Orphaned service cleaned up, retrying creation")
 			response, err = createService(ctx, *r.client, input)
+		} else if existingServiceId != "" {
+			// Adopt the existing service instead of creating a new one
+			tflog.Info(ctx, "Adopting existing service with instances", map[string]interface{}{
+				"serviceId": existingServiceId,
+			})
+			data.Id = types.StringValue(existingServiceId)
+			// Continue to update the service settings below
+			err = nil
+			response = nil // Signal that we're adopting, not creating
 		}
 	}
 
@@ -375,13 +384,16 @@ func (r *ServiceResource) Create(ctx context.Context, req resource.CreateRequest
 		return
 	}
 
-	tflog.Trace(ctx, "created a service")
-
-	service := response.ServiceCreate.Service
-
-	data.Id = types.StringValue(service.Id)
-	data.Name = types.StringValue(service.Name)
-	data.ProjectId = types.StringValue(service.ProjectId)
+	// If response is nil, we're adopting an existing service
+	if response != nil {
+		tflog.Trace(ctx, "created a service")
+		service := response.ServiceCreate.Service
+		data.Id = types.StringValue(service.Id)
+		data.Name = types.StringValue(service.Name)
+		data.ProjectId = types.StringValue(service.ProjectId)
+	} else {
+		tflog.Trace(ctx, "adopted existing service")
+	}
 
 	instanceInput := buildServiceInstanceInput(data, regionsData)
 
@@ -996,13 +1008,14 @@ func redeployAllInstances(ctx context.Context, client graphql.Client, serviceId 
 	return nil
 }
 
-// cleanupOrphanedService finds a service by name in a project, checks if it's orphaned
-// (has no service instances), and deletes it if so. Returns true if cleanup was performed.
-func (r *ServiceResource) cleanupOrphanedService(ctx context.Context, serviceName string, projectId string) (bool, error) {
+// handleExistingService finds a service by name in a project, checks if it's orphaned
+// (has no service instances), and either deletes it (if orphaned) or returns its ID for adoption.
+// Returns: (serviceId for adoption, wasDeleted, error)
+func (r *ServiceResource) handleExistingService(ctx context.Context, serviceName string, projectId string) (string, bool, error) {
 	// Get all services in the project
 	projectServices, err := getProjectServices(ctx, *r.client, projectId)
 	if err != nil {
-		return false, fmt.Errorf("failed to list services in project: %w", err)
+		return "", false, fmt.Errorf("failed to list services in project: %w", err)
 	}
 
 	// Find the service with matching name
@@ -1015,8 +1028,12 @@ func (r *ServiceResource) cleanupOrphanedService(ctx context.Context, serviceNam
 	}
 
 	if existingServiceId == "" {
-		// No service with this name found - nothing to clean up
-		return false, nil
+		// No service with this name found - strange since we got "already exists" error
+		tflog.Warn(ctx, "Could not find existing service by name despite 'already exists' error", map[string]interface{}{
+			"serviceName": serviceName,
+			"projectId":   projectId,
+		})
+		return "", false, nil
 	}
 
 	tflog.Info(ctx, "Found existing service with same name, checking if orphaned", map[string]interface{}{
@@ -1027,16 +1044,16 @@ func (r *ServiceResource) cleanupOrphanedService(ctx context.Context, serviceNam
 	// Check if this service has any instances
 	instancesResponse, err := getServiceInstances(ctx, *r.client, existingServiceId)
 	if err != nil {
-		return false, fmt.Errorf("failed to get service instances: %w", err)
+		return "", false, fmt.Errorf("failed to get service instances: %w", err)
 	}
 
 	if len(instancesResponse.Service.ServiceInstances.Edges) > 0 {
-		// Service has instances - it's not orphaned, don't delete it
-		tflog.Info(ctx, "Service has instances, not orphaned - cannot clean up", map[string]interface{}{
+		// Service has instances - it's not orphaned, return ID for adoption
+		tflog.Info(ctx, "Service has instances, will adopt existing service", map[string]interface{}{
 			"serviceId":     existingServiceId,
 			"instanceCount": len(instancesResponse.Service.ServiceInstances.Edges),
 		})
-		return false, nil
+		return existingServiceId, false, nil
 	}
 
 	// Service is orphaned - delete it
@@ -1047,7 +1064,7 @@ func (r *ServiceResource) cleanupOrphanedService(ctx context.Context, serviceNam
 
 	_, err = deleteService(ctx, *r.client, existingServiceId)
 	if err != nil {
-		return false, fmt.Errorf("failed to delete orphaned service: %w", err)
+		return "", false, fmt.Errorf("failed to delete orphaned service: %w", err)
 	}
 
 	tflog.Info(ctx, "Successfully deleted orphaned service", map[string]interface{}{
@@ -1055,5 +1072,5 @@ func (r *ServiceResource) cleanupOrphanedService(ctx context.Context, serviceNam
 		"serviceName": serviceName,
 	})
 
-	return true, nil
+	return "", true, nil
 }
